@@ -1,18 +1,20 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Product } from "./products.entity";
 import { Repository } from "typeorm";
 import Redis from "ioredis";
 import { REDIS_CLIENT, REDIS_KEYS } from "src/redis/redis.constants";
 import { CreateProductDto } from "./dto/create-product.dto";
+import { RabbitMQService } from "src/rabbitmq/rabbitmq.service";
 
 @Injectable()
-export class ProductsService {
+export class ProductsService implements OnModuleInit {
   private logger = new Logger("Product Service")
 
   constructor(
     @InjectRepository(Product) private readonly repo: Repository<Product>,
-    @Inject(REDIS_CLIENT) private readonly redisService: Redis
+    @Inject(REDIS_CLIENT) private readonly redisService: Redis,
+    private readonly rabbitMQService: RabbitMQService
   ) { }
 
   async createProduct(dto: CreateProductDto): Promise<Product> {
@@ -36,4 +38,22 @@ export class ProductsService {
     await this.redisService.set(cacheKey, JSON.stringify(product))
     return product
   }
+
+  async onModuleInit() {
+    await this.rabbitMQService.waitUntilReady();
+    await this.rabbitMQService.subscribe("order.created", async (order) => {
+      console.log("📦 Received order.created event:", order);
+      const product = await this.repo.findOne({ where: { id: order.productId } });
+      if (!product) {
+        this.logger.warn(`Product with id ${order.id} not found`);
+        throw new NotFoundException("Product not found")
+      }
+      product.qty = product.qty - (order.qty ?? 1);
+      await this.repo.save(product);
+      const cacheKey = `${REDIS_KEYS.productId}:${product.id}`;
+      await this.redisService.set(cacheKey, JSON.stringify(product));
+      this.logger.log(`Product ${product.id} qty updated to ${product.qty}`);
+    });
+  }
+
 }
