@@ -3,9 +3,10 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Product } from "./products.entity";
 import { Repository } from "typeorm";
 import Redis from "ioredis";
-import { REDIS_CLIENT, REDIS_KEYS } from "src/redis/redis.constants";
+import { REDIS_CLIENT, REDIS_KEYS } from "../redis/redis.constants";
 import { CreateProductDto } from "./dto/create-product.dto";
-import { RabbitMQService } from "src/rabbitmq/rabbitmq.service";
+import { RabbitMQService } from "../rabbitmq/rabbitmq.service";
+import { OrderCreatedEventDto } from "./dto/order-created-event.dto";
 
 @Injectable()
 export class ProductsService implements OnModuleInit {
@@ -41,18 +42,22 @@ export class ProductsService implements OnModuleInit {
 
   async onModuleInit() {
     await this.rabbitMQService.waitUntilReady();
-    await this.rabbitMQService.subscribe("order.created", async (order) => {
-      console.log("📦 Received order.created event:", order);
-      const product = await this.repo.findOne({ where: { id: order.productId } });
-      if (!product) {
-        this.logger.warn(`Product with id ${order.id} not found`);
-        throw new NotFoundException("Product not found")
+    await this.rabbitMQService.subscribe("order.created", async (order: OrderCreatedEventDto) => {
+      try {
+        console.log("📦 Received order.created event:", order);
+        const product = await this.repo.findOne({ where: { id: order.productId } });
+        if (!product) {
+          this.logger.warn(`Product with id ${order.productId} not found`);
+          return;
+        }
+        product.qty = product.qty - (order.qty ?? 1);
+        await this.repo.save(product);
+        const cacheKey = `${REDIS_KEYS.productId}:${product.id}`;
+        await this.redisService.set(cacheKey, JSON.stringify(product));
+        this.logger.log(`Product ${product.id} qty updated to ${product.qty}`);
+      } catch (error) {
+        this.logger.error(`Error processing order.created event: ${error.message}`, error.stack);
       }
-      product.qty = product.qty - (order.qty ?? 1);
-      await this.repo.save(product);
-      const cacheKey = `${REDIS_KEYS.productId}:${product.id}`;
-      await this.redisService.set(cacheKey, JSON.stringify(product));
-      this.logger.log(`Product ${product.id} qty updated to ${product.qty}`);
     });
   }
 

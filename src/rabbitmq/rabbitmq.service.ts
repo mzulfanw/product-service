@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { connect, Channel, ChannelModel } from "amqplib";
 
@@ -9,6 +9,7 @@ export class RabbitMQService implements OnModuleInit {
   private readonly exchangeName = "events";
   private ready!: Promise<void>;
   private readyResolve!: () => void;
+  private logger = new Logger("RabbitMQ")
 
   constructor(private readonly configService: ConfigService) {
     this.ready = new Promise((resolve) => {
@@ -21,7 +22,7 @@ export class RabbitMQService implements OnModuleInit {
   }
 
   private async connectRabbitMQ() {
-    console.log("🐇 Connecting to RabbitMQ...");
+    this.logger.log("🐇 Connecting to RabbitMQ...");
 
     this.connection = await connect({
       hostname: this.configService.get<string>("RABBITMQ_HOST"),
@@ -33,7 +34,7 @@ export class RabbitMQService implements OnModuleInit {
     this.channel = await this.connection.createChannel();
     await this.channel.assertExchange(this.exchangeName, "topic", { durable: true });
 
-    console.log("✅ RabbitMQ connected and exchange asserted.");
+    this.logger.log("✅ RabbitMQ connected and exchange asserted.");
 
     this.readyResolve();
   }
@@ -45,7 +46,7 @@ export class RabbitMQService implements OnModuleInit {
   async publish(event: string, payload: any) {
     if (!this.channel) throw new Error("RabbitMQ channel not initialized");
     this.channel.publish(this.exchangeName, event, Buffer.from(JSON.stringify(payload)));
-    console.log(`📤 Published event: ${event}`);
+    this.logger.log(`📤 Published event: ${event}`);
   }
 
   async subscribe(event: string, handler: (msg: any) => void) {

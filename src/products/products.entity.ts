@@ -8,6 +8,7 @@ export class Product {
   @Column()
   name: string;
 
+  @Column({ default: 1000000 })
   price: number;
 
   @Column()
