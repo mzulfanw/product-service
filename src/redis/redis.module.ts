@@ -11,6 +11,9 @@ import { ConfigService } from "@nestjs/config";
         return new Redis({
           host: configService.get('REDIS_HOST'),
           port: parseInt(configService.get('REDIS_PORT') || '6379'),
+          maxRetriesPerRequest: 5,
+          enableReadyCheck: true,
+          connectTimeout: parseInt(configService.get('REDIS_CONNECT_TIMEOUT') || '10000'),
           showFriendlyErrorStack: true
         });
       },

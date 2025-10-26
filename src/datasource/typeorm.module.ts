@@ -19,7 +19,12 @@ import { ConfigService } from "@nestjs/config";
             password: configService.get('DB_PASSWORD'),
             database: configService.get('DB_NAME'),
             synchronize: true,
-            entities: [`${__dirname}/../**/*.entity.{ts,js}`]
+            entities: [`${__dirname}/../**/*.entity.{ts,js}`],
+            extra: {
+              max: parseInt(configService.get('DB_POOL_MAX') || '100'),
+              min: parseInt(configService.get('DB_POOL_MIN') || '10'),
+              idleTimeoutMillis: parseInt(configService.get('DB_POOL_IDLE_TIMEOUT') || '30000'),
+            }
           })
           logger.log(`${__dirname}/../**/**.entity.{.ts,.js}`)
           await dataSource.initialize();

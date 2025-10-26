@@ -13,7 +13,7 @@ export class OrderCreatedEventDto {
   totalPrice: number;
 
   @IsNumber()
-  qty: number;
+  quantity: number;
 
   @IsString()
   status: string;

@@ -45,16 +45,22 @@ export class ProductsService implements OnModuleInit {
     await this.rabbitMQService.subscribe("order.created", async (order: OrderCreatedEventDto) => {
       try {
         console.log("📦 Received order.created event:", order);
-        const product = await this.repo.findOne({ where: { id: order.productId } });
-        if (!product) {
-          this.logger.warn(`Product with id ${order.productId} not found`);
+        const result = await this.repo.createQueryBuilder()
+          .update(Product)
+          .set({ qty: () => `qty - ${order.quantity ?? 1}` })
+          .where("id = :id AND qty >= :qty", { id: order.productId, qty: order.quantity ?? 1 })
+          .execute();
+        if (result.affected === 0) {
+          this.logger.warn(`Product ${order.productId} insufficient stock for order (qty=${order.quantity ?? 1})`);
           return;
         }
-        product.qty = product.qty - (order.qty ?? 1);
-        await this.repo.save(product);
-        const cacheKey = `${REDIS_KEYS.productId}:${product.id}`;
-        await this.redisService.set(cacheKey, JSON.stringify(product));
-        this.logger.log(`Product ${product.id} qty updated to ${product.qty}`);
+        let updatedProduct = result.raw[0];
+        if (!updatedProduct) {
+          updatedProduct = await this.repo.findOne({ where: { id: order.productId } });
+        }
+        const cacheKey = `${REDIS_KEYS.productId}:${updatedProduct.id}`;
+        await this.redisService.set(cacheKey, JSON.stringify({ ...updatedProduct }));
+        this.logger.log(`Product ${updatedProduct.id} qty updated to ${updatedProduct.qty}`);
       } catch (error) {
         this.logger.error(`Error processing order.created event: ${error.message}`, error.stack);
       }
